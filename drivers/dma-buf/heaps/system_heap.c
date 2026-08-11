@@ -438,7 +438,7 @@ static struct dma_buf *system_heap_do_allocate(struct dma_heap *heap,
 			goto free_buffer;
 
 		list_add_tail(&page->lru, &pages);
-		size_remaining -= page_size(page);
+		size_remaining -= heap_page_size(page);
 		max_order = compound_order(page);
 		i++;
 	}
@@ -449,7 +449,7 @@ static struct dma_buf *system_heap_do_allocate(struct dma_heap *heap,
 
 	sg = table->sgl;
 	list_for_each_entry_safe(page, tmp_page, &pages, lru) {
-		sg_set_page(sg, page, page_size(page), 0);
+		sg_set_page(sg, page, heap_page_size(page), 0);
 		sg = sg_next(sg);
 		list_del(&page->lru);
 	}
