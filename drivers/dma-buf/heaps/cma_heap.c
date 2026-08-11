@@ -22,22 +22,7 @@
 #include <linux/sched/signal.h>
 #include <linux/slab.h>
 #include <linux/vmalloc.h>
-
-/* Kernel 4.19 compatibility helpers */
-static inline void dma_sync_sgtable_for_cpu(struct device *dev,
-					     struct sg_table *sgt,
-					     enum dma_data_direction dir)
-{
-	dma_sync_sg_for_cpu(dev, sgt->sgl, sgt->nents, dir);
-}
-
-static inline void dma_sync_sgtable_for_device(struct device *dev,
-						struct sg_table *sgt,
-						enum dma_data_direction dir)
-{
-	dma_sync_sg_for_device(dev, sgt->sgl, sgt->nents, dir);
-}
-
+#include "dma-heap-compat.h"
 
 struct cma_heap {
 	struct dma_heap *heap;
