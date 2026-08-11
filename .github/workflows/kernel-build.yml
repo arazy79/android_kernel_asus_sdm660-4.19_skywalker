@@ -1,24 +1,20 @@
-name: Kernel Build X00TD A14 skywalker
+name: Kernel Build X00TD 4.19 SKYWALKER
 
 on:
   workflow_dispatch:
     inputs:
       defconfig:
-        description: 'Nama file defconfig'
+        description: 'Defconfig path (relatif dari arch/arm64/configs/)'
         required: true
         default: 'X00TD_defconfig'
-      branch:
-        description: 'Branch repo'
-        required: true
-        default: 'r2/s'
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
 
     env:
       ARCH: arm64
+      CC: clang
       CROSS_COMPILE: aarch64-linux-gnu-
       CROSS_COMPILE_ARM32: arm-linux-gnueabi-
 
@@ -27,137 +23,80 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: arazy79/android_kernel_asus_sdm660-4.19_skywalker
-          ref: ${{ github.event.inputs.branch }}
+          ref: r2/s
           path: kernel
           submodules: recursive
 
-      - name: Cache ccache
-        uses: actions/cache@v4
-        with:
-          path: ~/.ccache
-          key: ccache-${{ github.event.inputs.branch }}-${{ github.event.inputs.defconfig }}-${{ github.run_id }}
-          restore-keys: |
-            ccache-${{ github.event.inputs.branch }}-${{ github.event.inputs.defconfig }}-
-            ccache-${{ github.event.inputs.branch }}-
-
       - name: Install dependencies
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends \
-            bc bison build-essential ccache flex git \
-            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
-            libncurses-dev libssl-dev \
-            clang-17 llvm-17 lld-17
-          echo "/usr/lib/llvm-17/bin" >> $GITHUB_PATH
+          sudo apt-get update
+          sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick libncurses-dev lib32readline-dev lib32z1-dev liblz4-tool libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev
+          sudo apt-get install -y gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi
+          sudo apt-get install -y clang llvm lld
 
-      - name: Configure ccache
+      - name: Debug - Check files
         run: |
-          ccache --max-size=2G
-          ccache --zero-stats
-
-      - name: Debug check defconfig
-        run: |
-          echo "Branch: ${{ github.event.inputs.branch }}"
-          echo "Defconfig: ${{ github.event.inputs.defconfig }}"
-          echo ""
-          echo "=== Auto-detect ==="
-          FOUND=$(find kernel/arch/arm64/configs -name "${{ github.event.inputs.defconfig }}" | head -1)
-          if [ -n "$FOUND" ]; then
-            echo "FOUND: $FOUND"
-          else
-            echo "NOT FOUND"
-          fi
-          echo ""
+          echo "=== Kernel directory contents ==="
+          ls -la kernel/
+          echo "=== Defconfig exists? ==="
+          ls -la kernel/arch/arm64/configs/vendor/asus/${{ github.event.inputs.defconfig }} || echo "FILE NOT FOUND!"
           echo "=== All defconfigs ==="
-          find kernel/arch/arm64/configs -name "*defconfig*" | sort
+          ls -la kernel/arch/arm64/configs/
+
+      - name: Prepare output directory
+        run: |
+          rm -rf kernel/out
+          mkdir -p kernel/out
 
       - name: Make defconfig
         working-directory: kernel
         run: |
-          DEFCONFIG_NAME="${{ github.event.inputs.defconfig }}"
-          DEFCONFIG_PATH=$(find arch/arm64/configs -name "$DEFCONFIG_NAME" | head -1)
-          if [ -z "$DEFCONFIG_PATH" ]; then
-            echo "ERROR: $DEFCONFIG_NAME not found"
-            find arch/arm64/configs -name "*defconfig*" | sort
-            exit 1
-          fi
-          DEFCONFIG_REL="${DEFCONFIG_PATH#arch/arm64/configs/}"
-          echo "Make target: $DEFCONFIG_REL"
-          make -j$(nproc) \
-            ARCH=arm64 \
-            O=out \
-            CC="ccache clang" \
-            LLVM=1 \
-            LLVM_IAS=1 \
-            CROSS_COMPILE=$CROSS_COMPILE \
-            CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32 \
-            "$DEFCONFIG_REL"
+          cp arch/arm64/configs/asus/${{ github.event.inputs.defconfig }} out/.config
+          yes "" | make ARCH=${{ env.ARCH }} O=out oldconfig
 
       - name: Build kernel
         working-directory: kernel
         run: |
-          make -j$(nproc) \
-            ARCH=arm64 \
-            O=out \
-            CC="ccache clang" \
-            LLVM=1 \
-            LLVM_IAS=1 \
-            CROSS_COMPILE=$CROSS_COMPILE \
-            CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32 \
-            AR=llvm-ar \
-            NM=llvm-nm \
-            OBJCOPY=llvm-objcopy \
-            OBJDUMP=llvm-objdump \
-            STRIP=llvm-strip \
-            LD=ld.lld \
-            KCFLAGS="-Wno-error" \
-            Image.gz dtbs
+          make ARCH=${{ env.ARCH }} O=out CC="${{ env.CC }}" CROSS_COMPILE="${{ env.CROSS_COMPILE }}" CROSS_COMPILE_ARM32="${{ env.CROSS_COMPILE_ARM32 }}" KCFLAGS="-Wno-error" -j2
 
-      - name: Pack Image.gz-dtb
+      - name: Build DTB + Image.gz-dtb
         working-directory: kernel
         run: |
-          echo "=== All DTBs ==="
+          make ARCH=${{ env.ARCH }} O=out CC="${{ env.CC }}" CROSS_COMPILE="${{ env.CROSS_COMPILE }}" dtbs
+          echo "=== All DTB files ==="
           find out/arch/arm64/boot/dts -name "*.dtb" | sort
-          echo ""
-          DTB_PATH=""
-          for pattern in "sdm636" "sdm660"; do
-            FOUND=$(find out/arch/arm64/boot/dts -name "${pattern}*.dtb" | sort | head -1)
-            if [ -n "$FOUND" ]; then
-              DTB_PATH="$FOUND"
-              echo "DTB selected: $DTB_PATH"
-              break
-            fi
-          done
-          if [ -n "$DTB_PATH" ]; then
-            if [ ! -f out/arch/arm64/boot/Image.gz ]; then
-              echo "ERROR: Image.gz missing"
-              exit 1
-            fi
-            cat out/arch/arm64/boot/Image.gz "$DTB_PATH" > out/arch/arm64/boot/Image.gz-dtb
-            ls -lh out/arch/arm64/boot/Image.gz-dtb
-          else
-            echo "ERROR: No sdm636/sdm660 DTB found"
-            find out/arch/arm64/boot/dts -name "*.dtb" | sort
+          
+          # Cari DTB untuk X00TD
+          DTB=$(find out/arch/arm64/boot/dts -iname "*x00td*.dtb" | head -1)
+          
+          # Kalau gak ada, coba sdm636.dtb
+          if [ -z "$DTB" ]; then
+            DTB=$(find out/arch/arm64/boot/dts -name "sdm636.dtb" | head -1)
+          fi
+          
+          # Kalau masih gak ada, coba sdm660.dtb
+          if [ -z "$DTB" ]; then
+            DTB=$(find out/arch/arm64/boot/dts -name "sdm660.dtb" | head -1)
+          fi
+          
+          if [ -z "$DTB" ]; then
+            echo "ERROR: No DTB found! Build failed."
             exit 1
           fi
+          
+          echo "Using DTB: $DTB"
+          cat out/arch/arm64/boot/Image.gz "$DTB" > out/arch/arm64/boot/Image.gz-dtb
+          echo "=== Final size ==="
+          ls -lh out/arch/arm64/boot/Image.gz out/arch/arm64/boot/Image.gz-dtb
 
-      - name: Build summary
-        if: always()
+      - name: Check build result
         run: |
-          echo "=== Boot files ==="
-          ls -lh kernel/out/arch/arm64/boot/ 2>/dev/null || echo "(empty)"
-          echo ""
-          echo "=== DTBs ==="
-          find kernel/out/arch/arm64/boot/dts -name "sdm*.dtb" 2>/dev/null | head -20 || echo "(none)"
-          echo ""
-          echo "=== ccache stats ==="
-          ccache --show-stats
+          ls -la kernel/out/arch/arm64/boot/
 
-      - name: Upload artifacts
-        if: always()
+      - name: Upload Image.gz-dtb
+        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: Kernel-Build-SKYWALKER_X00TD-4.19-${{ github.run_id }}
+          name: Kernel-Build-X00TD-SKYWALKER-4.19-${{ github.run_id }}
           path: |
             kernel/out/arch/arm64/boot/Image.gz-dtb
-          if-no-files-found: warn
