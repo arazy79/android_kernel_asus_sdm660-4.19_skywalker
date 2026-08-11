@@ -51,4 +51,6 @@ static inline void dma_sync_sgtable_for_device(struct device *dev,
 	dma_sync_sg_for_device(dev, sgt->sgl, sgt->nents, dir);
 }
 
+#define page_size(page) heap_page_size(page)
+
 #endif
