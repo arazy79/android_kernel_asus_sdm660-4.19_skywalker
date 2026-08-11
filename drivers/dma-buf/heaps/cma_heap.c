@@ -23,6 +23,25 @@
 #include <linux/slab.h>
 #include <linux/vmalloc.h>
 
+/* Kernel 4.19 compatibility helpers */
+static inline int dma_map_sgtable(struct device *dev, struct sg_table *sgt,
+				  enum dma_data_direction dir,
+				  unsigned long attrs)
+{
+	int nents = dma_map_sg_attrs(dev, sgt->sgl, sgt->nents, dir, attrs);
+	if (!nents)
+		return -ENOMEM;
+	sgt->nents = nents;
+	return 0;
+}
+
+static inline void dma_unmap_sgtable(struct device *dev, struct sg_table *sgt,
+				     enum dma_data_direction dir,
+				     unsigned long attrs)
+{
+	dma_unmap_sg_attrs(dev, sgt->sgl, sgt->nents, dir, attrs);
+}
+
 
 struct cma_heap {
 	struct dma_heap *heap;
