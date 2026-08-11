@@ -24,22 +24,18 @@
 #include <linux/vmalloc.h>
 
 /* Kernel 4.19 compatibility helpers */
-static inline int dma_map_sgtable(struct device *dev, struct sg_table *sgt,
-				  enum dma_data_direction dir,
-				  unsigned long attrs)
+static inline void dma_sync_sgtable_for_cpu(struct device *dev,
+					     struct sg_table *sgt,
+					     enum dma_data_direction dir)
 {
-	int nents = dma_map_sg_attrs(dev, sgt->sgl, sgt->nents, dir, attrs);
-	if (!nents)
-		return -ENOMEM;
-	sgt->nents = nents;
-	return 0;
+	dma_sync_sg_for_cpu(dev, sgt->sgl, sgt->nents, dir);
 }
 
-static inline void dma_unmap_sgtable(struct device *dev, struct sg_table *sgt,
-				     enum dma_data_direction dir,
-				     unsigned long attrs)
+static inline void dma_sync_sgtable_for_device(struct device *dev,
+						struct sg_table *sgt,
+						enum dma_data_direction dir)
 {
-	dma_unmap_sg_attrs(dev, sgt->sgl, sgt->nents, dir, attrs);
+	dma_sync_sg_for_device(dev, sgt->sgl, sgt->nents, dir);
 }
 
 
